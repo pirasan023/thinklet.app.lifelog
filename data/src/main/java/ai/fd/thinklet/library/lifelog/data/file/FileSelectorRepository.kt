@@ -18,6 +18,11 @@ interface FileSelectorRepository {
     fun gifPath(): File?
 
     /**
+     * 画像(JPG)ファイルのパスを取得する
+     */
+    fun jpgPath(): File?
+
+    /**
      * 処理が完了した[file]を処理する．
      * ここでは，MediaScannerにかけて，MTPに反映させる．
      */

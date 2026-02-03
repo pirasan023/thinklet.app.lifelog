@@ -25,6 +25,10 @@ internal class FileSelectorRepositoryImpl @Inject constructor(
         return File(dir(), "${fileFormat()}.gif")
     }
 
+    override fun jpgPath(): File? {
+        return File(dir(), "${fileFormat()}.jpg")
+    }
+
     override fun deploy(file: File): Boolean {
         return updateIndex(file)
     }
@@ -43,13 +47,9 @@ internal class FileSelectorRepositoryImpl @Inject constructor(
     }
 
     private fun rootDir(): File {
-        return if (context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
-            val download =
-                File(Environment.getExternalStorageDirectory(), Environment.DIRECTORY_DCIM)
-            File(download, DIR)
-        } else {
-            File(context.getExternalFilesDir(null), DIR)
-        }.apply {
+        val download =
+            File(Environment.getExternalStorageDirectory(), Environment.DIRECTORY_DCIM)
+        return File(download, DIR).apply {
             this.mkdirs()
         }
     }
