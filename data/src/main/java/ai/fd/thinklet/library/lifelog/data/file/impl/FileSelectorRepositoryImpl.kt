@@ -30,6 +30,10 @@ internal class FileSelectorRepositoryImpl @Inject constructor(
     }
 
     override fun deploy(file: File): Boolean {
+        if (!file.exists() || !file.isFile) {
+            Log.w(TAG, "deploy skipped. invalid file: ${file.absolutePath}")
+            return false
+        }
         return updateIndex(file)
     }
 
@@ -38,23 +42,32 @@ internal class FileSelectorRepositoryImpl @Inject constructor(
     }
 
     private fun dir(): File {
-        return File(
-            rootDir(),
-            SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())
-        ).apply {
-            mkdirs()
+        val dateFolder = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+        return File(rootDir(), dateFolder).apply {
+            if (!exists()) {
+                val created = mkdirs()
+                Log.d(TAG, "Directory $absolutePath created: $created")
+            }
         }
     }
 
     private fun rootDir(): File {
-        val download =
-            File(Environment.getExternalStorageDirectory(), Environment.DIRECTORY_DCIM)
-        return File(download, DIR).apply {
-            this.mkdirs()
+        val baseDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM)
+        return File(baseDir, DIR).apply {
+            if (!exists()) {
+                val created = mkdirs()
+                if (!created) {
+                    Log.w(TAG, "Root directory $absolutePath create failed")
+                }
+            }
         }
     }
 
     private fun updateIndex(file: File): Boolean {
+        if (!file.exists() || !file.isFile) {
+            Log.w(TAG, "updateIndex skipped. invalid file: ${file.absolutePath}")
+            return false
+        }
         Log.d(TAG, "handleCompletedFile")
         MediaScannerConnection.scanFile(
             context,
@@ -71,10 +84,5 @@ internal class FileSelectorRepositoryImpl @Inject constructor(
             })
         Log.d(TAG, "success handleCompletedFile $file")
         return true
-    }
-
-    private companion object {
-        const val DIR = "lifelog"
-        const val TAG = "FileSelectorRepository"
     }
 }

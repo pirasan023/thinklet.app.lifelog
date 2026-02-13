@@ -28,6 +28,27 @@ class SnapshotUseCase @Inject constructor(
         }
     }
 
+    suspend fun takeSingleSnapshot(size: Size): Result<String> {
+        return snapShotRepository.takePhoto(size).mapCatching { bitmap ->
+            Log.v(TAG, "snapshot success")
+            saveBitmapAndGetPath(bitmap) ?: throw IllegalStateException("Failed to save bitmap")
+        }
+    }
+
+    private suspend fun saveBitmapAndGetPath(bitmap: Bitmap): String? {
+        try {
+            val jpgFile = fileSelectorRepository.jpgPath() ?: return null
+            FileOutputStream(jpgFile).use { fos ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 95, fos)
+            }
+            fileSelectorRepository.deploy(jpgFile)
+            return jpgFile.absolutePath
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save bitmap as jpg", e)
+            return null
+        }
+    }
+
     private suspend fun CoroutineScope.snapshot(size: Size, intervalSeconds: Int) {
         timerRepository.tickerFlow(intervalSeconds.seconds).collect {
             snapShotRepository.takePhoto(size)
