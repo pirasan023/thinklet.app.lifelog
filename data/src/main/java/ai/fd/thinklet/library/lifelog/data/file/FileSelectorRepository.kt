@@ -23,6 +23,11 @@ interface FileSelectorRepository {
     fun jpgPath(): File?
 
     /**
+     * 解析結果(TXT)ファイルのパスを取得する
+     */
+    fun txtPath(baseFile: File): File
+
+    /**
      * 処理が完了した[file]を処理する．
      * ここでは，MediaScannerにかけて，MTPに反映させる．
      */

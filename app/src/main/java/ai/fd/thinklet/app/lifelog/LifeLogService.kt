@@ -1,8 +1,10 @@
 package ai.fd.thinklet.app.lifelog
 
 import ai.fd.thinklet.app.lifelog.data.LifeLogStatusRepository
+import ai.fd.thinklet.app.lifelog.domain.GeminiAnalysisUseCase
 import ai.fd.thinklet.app.lifelog.domain.MicRecordUseCase
 import ai.fd.thinklet.app.lifelog.domain.SnapshotUseCase
+import ai.fd.thinklet.app.lifelog.domain.SpreadsheetLogUseCase
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -22,6 +24,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -29,6 +35,15 @@ class LifeLogService : LifecycleService() {
 
     @Inject
     lateinit var snapshotUseCase: SnapshotUseCase
+
+    @Inject
+    lateinit var geminiAnalysisUseCase: GeminiAnalysisUseCase
+
+    @Inject
+    lateinit var spreadsheetLogUseCase: SpreadsheetLogUseCase
+
+    @Inject
+    lateinit var fileSelectorRepository: ai.fd.thinklet.library.lifelog.data.file.FileSelectorRepository
 
     @Inject
     lateinit var micRecordUseCase: MicRecordUseCase
@@ -108,7 +123,35 @@ class LifeLogService : LifecycleService() {
                 if (lastPath == null) {
                     Log.e(TAG, "Snapshot failed: $error")
                 } else {
-                    Log.i(TAG, "Snapshot saved to: $lastPath")
+                    Log.i(TAG, "Snapshot saved to: $lastPath. Starting analysis...")
+                    
+                    val currentPath = lastPath
+                    val currentTime = lastSuccessTime
+                    
+                    lifecycleScope.launch {
+                        val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(currentTime))
+                        geminiAnalysisUseCase(currentPath, timestamp).onSuccess { text ->
+                            Log.i(TAG, "Analysis success: $text")
+                            
+                            // Save locally as .txt
+                            try {
+                                val txtFile = fileSelectorRepository.txtPath(File(currentPath))
+                                txtFile.writeText(text)
+                                fileSelectorRepository.deploy(txtFile)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Failed to save analysis text locally", e)
+                            }
+                            
+                            // Log to Spreadsheet
+                            spreadsheetLogUseCase(timestamp, text, currentPath).onFailure {
+                                Log.e(TAG, "Spreadsheet logging failed inside service", it)
+                            }.onSuccess {
+                                Log.i(TAG, "Spreadsheet logging success")
+                            }
+                        }.onFailure {
+                            Log.e(TAG, "Analysis failed", it)
+                        }
+                    }
                 }
                 
                 val nextTime = SystemClock.elapsedRealtime() + intervalMillis

@@ -16,8 +16,8 @@ data class LifeLogArgs(
     companion object {
         @Suppress("DEPRECATION")
         fun get(bundle: Bundle?): LifeLogArgs = LifeLogArgs(
-            longSide = bundle?.get("longSide")?.toString()?.toIntOrNull() ?: 640,
-            shortSide = bundle?.get("shortSide")?.toString()?.toIntOrNull() ?: 480,
+            longSide = bundle?.get("longSide")?.toString()?.toIntOrNull() ?: 1280,
+            shortSide = bundle?.get("shortSide")?.toString()?.toIntOrNull() ?: 720,
             intervalSeconds = max(bundle?.get("intervalSeconds")?.toString()?.toIntOrNull() ?: 300, 10), // 最小で10秒
             enabledMic = bundle?.get("enabledMic")?.toString()?.toBooleanStrictOrNull() == true,
         )

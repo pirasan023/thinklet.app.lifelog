@@ -29,6 +29,10 @@ internal class FileSelectorRepositoryImpl @Inject constructor(
         return File(dir(), "${fileFormat()}.jpg")
     }
 
+    override fun txtPath(baseFile: File): File {
+        return File(baseFile.parentFile, "${baseFile.nameWithoutExtension}.txt")
+    }
+
     override fun deploy(file: File): Boolean {
         if (!file.exists() || !file.isFile) {
             Log.w(TAG, "deploy skipped. invalid file: ${file.absolutePath}")
@@ -43,24 +47,28 @@ internal class FileSelectorRepositoryImpl @Inject constructor(
 
     private fun dir(): File {
         val dateFolder = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
-        return File(rootDir(), dateFolder).apply {
-            if (!exists()) {
-                val created = mkdirs()
-                Log.d(TAG, "Directory $absolutePath created: $created")
+        val directory = File(rootDir(), dateFolder)
+        if (!directory.exists()) {
+            val created = directory.mkdirs()
+            Log.d(TAG, "Directory ${directory.absolutePath} created: $created")
+            if (!created && !directory.exists()) {
+                Log.e(TAG, "FAILED to create directory: ${directory.absolutePath}")
             }
         }
+        return directory
     }
 
     private fun rootDir(): File {
         val baseDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM)
-        return File(baseDir, DIR).apply {
-            if (!exists()) {
-                val created = mkdirs()
-                if (!created) {
-                    Log.w(TAG, "Root directory $absolutePath create failed")
-                }
+        val root = File(baseDir, DIR)
+        if (!root.exists()) {
+            val created = root.mkdirs()
+            Log.d(TAG, "Root directory ${root.absolutePath} created: $created")
+            if (!created && !root.exists()) {
+                Log.e(TAG, "FAILED to create root directory: ${root.absolutePath}")
             }
         }
+        return root
     }
 
     private fun updateIndex(file: File): Boolean {
@@ -84,5 +92,10 @@ internal class FileSelectorRepositoryImpl @Inject constructor(
             })
         Log.d(TAG, "success handleCompletedFile $file")
         return true
+    }
+
+    private companion object {
+        const val DIR = "lifelog"
+        const val TAG = "FileSelectorRepository"
     }
 }
