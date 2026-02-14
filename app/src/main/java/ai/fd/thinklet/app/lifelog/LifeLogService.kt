@@ -13,6 +13,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
 import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
@@ -26,6 +27,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -145,6 +147,21 @@ class LifeLogService : LifecycleService() {
                         
                         if (macScreenshot != null) {
                             Log.i(TAG, "Mac screenshot acquired, sending 2 images to Gemini")
+                            
+                            // Macスクリーンショットをローカルに保存（adb pullで一式エクスポート可能）
+                            try {
+                                val macFile = File(
+                                    File(currentPath).parentFile,
+                                    "${File(currentPath).nameWithoutExtension}_mac.png"
+                                )
+                                FileOutputStream(macFile).use { fos ->
+                                    macScreenshot.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                                }
+                                fileSelectorRepository.deploy(macFile)
+                                Log.i(TAG, "Mac screenshot saved to: ${macFile.absolutePath}")
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Failed to save Mac screenshot locally", e)
+                            }
                         } else {
                             Log.i(TAG, "No Mac screenshot, sending 1 image to Gemini")
                         }
