@@ -99,7 +99,7 @@ class GeminiAnalysisUseCase @Inject constructor() {
             # ユーザー大平直輝（Ohira Naoki）の情報
             - 情報は書いてあるが、これに引っ張られすぎないこと。
             - 属性
-                - 広島学院高校の学生
+                - 広島学院中学校3年生
                 - 2025年度未踏ジュニア採択生（修了済み）（スーパークリエイター）
             - 現在の活動
                 - Neurecorder（本プロジェクト）の開発

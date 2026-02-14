@@ -62,4 +62,4 @@
   - [2592x1944 マイクあり](./keyConfigs/2592_1944_withMic.json)
 
 # メモ
-- pcから画像やテキストを一括取得するコマンド→'adb pull /storage/emulated/0/DCIM/lifelog/ .'
+- pcから画像やテキストを一括取得するコマンド→'adb pull /storage/emulated/0/DCIM/lifelog/ '/Users/ohiranaoki/Temporary'
