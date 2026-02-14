@@ -30,6 +30,7 @@ android {
         
         buildConfigField("String", "GEMINI_API_KEY", "\"${localProperties.getProperty("gemini.api.key") ?: ""}\"")
         buildConfigField("String", "SPREADSHEET_WEBHOOK_URL", "\"${localProperties.getProperty("spreadsheet.webhook.url") ?: ""}\"")
+        buildConfigField("String", "MAC_SCREENSHOT_URL", "\"${localProperties.getProperty("mac.screenshot.url") ?: ""}\"")
     }
 
     buildTypes {

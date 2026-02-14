@@ -2,6 +2,7 @@ package ai.fd.thinklet.app.lifelog
 
 import ai.fd.thinklet.app.lifelog.data.LifeLogStatusRepository
 import ai.fd.thinklet.app.lifelog.domain.GeminiAnalysisUseCase
+import ai.fd.thinklet.app.lifelog.domain.MacScreenshotUseCase
 import ai.fd.thinklet.app.lifelog.domain.MicRecordUseCase
 import ai.fd.thinklet.app.lifelog.domain.SnapshotUseCase
 import ai.fd.thinklet.app.lifelog.domain.SpreadsheetLogUseCase
@@ -38,6 +39,9 @@ class LifeLogService : LifecycleService() {
 
     @Inject
     lateinit var geminiAnalysisUseCase: GeminiAnalysisUseCase
+
+    @Inject
+    lateinit var macScreenshotUseCase: MacScreenshotUseCase
 
     @Inject
     lateinit var spreadsheetLogUseCase: SpreadsheetLogUseCase
@@ -130,7 +134,22 @@ class LifeLogService : LifecycleService() {
                     
                     lifecycleScope.launch {
                         val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(currentTime))
-                        geminiAnalysisUseCase(currentPath, timestamp).onSuccess { text ->
+                        
+                        // Macのスクリーンショット取得を試みる（失敗してもnullで続行）
+                        val macScreenshot = try {
+                            macScreenshotUseCase()
+                        } catch (e: Exception) {
+                            Log.d(TAG, "Mac screenshot fetch failed, continuing without it", e)
+                            null
+                        }
+                        
+                        if (macScreenshot != null) {
+                            Log.i(TAG, "Mac screenshot acquired, sending 2 images to Gemini")
+                        } else {
+                            Log.i(TAG, "No Mac screenshot, sending 1 image to Gemini")
+                        }
+                        
+                        geminiAnalysisUseCase(currentPath, timestamp, macScreenshot).onSuccess { text ->
                             Log.i(TAG, "Analysis success: $text")
                             
                             // Save locally as .txt
