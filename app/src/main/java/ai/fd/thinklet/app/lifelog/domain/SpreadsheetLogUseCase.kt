@@ -3,7 +3,7 @@ package ai.fd.thinklet.app.lifelog.domain
 import ai.fd.thinklet.app.lifelog.BuildConfig
 import android.util.Log
 import io.ktor.client.*
-import io.ktor.client.engine.android.*
+import io.ktor.client.engine.okhttp.*
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
@@ -21,7 +21,7 @@ data class SpreadsheetLogRequest(
 )
 
 class SpreadsheetLogUseCase @Inject constructor() {
-    private val client = HttpClient(Android) {
+    private val client = HttpClient(OkHttp) {
         install(ContentNegotiation) {
             json(Json {
                 ignoreUnknownKeys = true
@@ -30,7 +30,6 @@ class SpreadsheetLogUseCase @Inject constructor() {
         install(HttpTimeout) {
             requestTimeoutMillis = 30000
         }
-        followRedirects = true
     }
 
     suspend operator fun invoke(timestamp: String, analysis: String, imagePath: String): Result<Unit> {
