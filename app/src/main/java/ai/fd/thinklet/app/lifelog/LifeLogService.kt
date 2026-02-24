@@ -1,6 +1,7 @@
 package ai.fd.thinklet.app.lifelog
 
 import ai.fd.thinklet.app.lifelog.data.LifeLogStatusRepository
+import ai.fd.thinklet.app.lifelog.domain.CheckIfPlayingUseCase
 import ai.fd.thinklet.app.lifelog.domain.GeminiAnalysisUseCase
 import ai.fd.thinklet.app.lifelog.domain.MacScreenshotUseCase
 import ai.fd.thinklet.app.lifelog.domain.MicRecordUseCase
@@ -57,9 +58,13 @@ class LifeLogService : LifecycleService() {
     @Inject
     lateinit var statusRepository: LifeLogStatusRepository
 
+    @Inject
+    lateinit var checkIfPlayingUseCase: CheckIfPlayingUseCase
+
     private var captureJob: Job? = null
     private var recordJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var analysisCounter = 0
 
     private val notificationManager by lazy {
         getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -183,6 +188,15 @@ class LifeLogService : LifecycleService() {
                                 Log.e(TAG, "Spreadsheet logging failed inside service", it)
                             }.onSuccess {
                                 Log.i(TAG, "Spreadsheet logging success")
+                            }
+
+                            // 10回に1回、遊びをチェックする
+                            analysisCounter++
+                            if (analysisCounter % 10 == 0) {
+                                Log.i(TAG, "Performing periodic check if user is playing...")
+                                lifecycleScope.launch {
+                                    checkIfPlayingUseCase()
+                                }
                             }
                         }.onFailure {
                             Log.e(TAG, "Analysis failed", it)

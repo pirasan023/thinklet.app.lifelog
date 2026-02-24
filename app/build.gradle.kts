@@ -31,6 +31,8 @@ android {
         buildConfigField("String", "GEMINI_API_KEY", "\"${localProperties.getProperty("gemini.api.key") ?: ""}\"")
         buildConfigField("String", "SPREADSHEET_WEBHOOK_URL", "\"${localProperties.getProperty("spreadsheet.webhook.url") ?: ""}\"")
         buildConfigField("String", "MAC_SCREENSHOT_URL", "\"${localProperties.getProperty("mac.screenshot.url") ?: ""}\"")
+        buildConfigField("String", "LINE_CHANNEL_ACCESS_TOKEN", "\"${localProperties.getProperty("LINE_CHANNEL_ACCESS_TOKEN") ?: ""}\"")
+        buildConfigField("String", "LINE_USER_ID", "\"${localProperties.getProperty("LINE_USER_ID") ?: ""}\"")
     }
 
     buildTypes {
