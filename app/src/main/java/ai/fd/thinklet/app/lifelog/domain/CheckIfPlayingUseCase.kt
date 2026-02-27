@@ -16,7 +16,7 @@ class CheckIfPlayingUseCase @Inject constructor(
     // Geminiモデルを初期化
     private val model by lazy {
         GenerativeModel(
-            modelName = "gemini-1.5-flash",
+            modelName = "gemini-2.5-flash",
             apiKey = BuildConfig.GEMINI_API_KEY
         )
     }
@@ -25,24 +25,36 @@ class CheckIfPlayingUseCase @Inject constructor(
     private val logDirectory =
         File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "lifelog")
 
-    suspend operator fun invoke() = withContext(Dispatchers.IO) {
+    suspend operator fun invoke(latestAnalysis: String, count: Int): Result<String?> = withContext(Dispatchers.IO) {
         try {
-            // 1. 最新10件のログ内容を取得
-            val logContent = getLatestLogContent(10)
+            // 1. ログ内容を取得（Analysis Frequencyと同じ数）
+            val logContent = getLatestLogContent(count)
 
-            if (logContent.isEmpty()) {
-                Log.i(TAG, "No log files found to analyze.")
-                return@withContext
+            if (latestAnalysis.isEmpty() && logContent.isEmpty()) {
+                Log.i(TAG, "No analysis or log files found.")
+                return@withContext Result.success(null)
+            }
+
+            val combinedContent = if (latestAnalysis.isNotEmpty()) {
+                """
+                # 最新の分析結果
+                $latestAnalysis
+                
+                # 直近 $count 件の履歴
+                $logContent
+                """.trimIndent()
+            } else {
+                logContent
             }
 
             // 2. Geminiに判定を依頼
-            val prompt = buildPrompt(logContent)
+            val prompt = buildPrompt(combinedContent)
             val response = model.generateContent(content { text(prompt) })
 
             val responseText = response.text?.trim()
             if (responseText.isNullOrEmpty()) {
                 Log.w(TAG, "Gemini returned an empty response.")
-                return@withContext
+                return@withContext Result.success(null)
             }
 
             // 3. 結果に応じてLINE通知
@@ -53,17 +65,21 @@ class CheckIfPlayingUseCase @Inject constructor(
                 }.onFailure {
                     Log.e(TAG, "Failed to send LINE notification.", it)
                 }
+                Result.success(responseText)
             } else {
                 Log.i(TAG, "User is determined to be working. No notification will be sent.")
+                Result.success("__NO__")
             }
 
         } catch (e: Exception) {
             Log.e(TAG, "An error occurred in CheckIfPlayingUseCase.", e)
+            Result.failure(e)
         }
     }
 
     /**
      * ログディレクトリから最新のn件の.txtファイルの内容を読み込み、結合して返す
+     * 日付ごとのサブディレクトリも探索対象とする
      */
     private fun getLatestLogContent(count: Int): String {
         if (!logDirectory.exists() || !logDirectory.isDirectory) {
@@ -71,10 +87,11 @@ class CheckIfPlayingUseCase @Inject constructor(
             return ""
         }
 
-        val logFiles = logDirectory.listFiles { _, name -> name.endsWith(".txt") }
-            ?.sortedByDescending { it.lastModified() }
-            ?.take(count)
-            ?: emptyList()
+        val logFiles = logDirectory.walkTopDown()
+            .filter { it.isFile && it.name.endsWith(".txt") }
+            .sortedByDescending { it.lastModified() }
+            .take(count)
+            .toList()
 
         if (logFiles.isEmpty()) {
             return ""
@@ -111,16 +128,28 @@ class CheckIfPlayingUseCase @Inject constructor(
             そして、以下のルールに従って応答を生成してください。
 
             1.  **もしユーザーが「遊んでいる」と判断した場合**:
-                *   ユーザー本人にLINEで通知する、少しユーモラスで気づきを与えるような短いメッセージを**1つだけ**生成してください。
-                *   メッセージは、ユーザーを責めるのではなく、「おや、一息ついていますか？」「集中力が切れてきた頃かもしれませんね？」のように、あくまで客観的で、少し皮肉が効いているくらいの温度感が望ましいです。
-                *   生成するのはメッセージ本文のみとし、前置きや解説は一切含めないでください。
+                - ユーザー本人にLINEで通知する、少しユーモラスで気づきを与えるような短いメッセージを**1つだけ**生成してください。
+                - メッセージは、ユーザーを責めるのではなく、必ずギャル口調で、あくまでフレンドリーにしてください。
+                - 生成するのはメッセージ本文のみとし、前置きや解説は一切含めないでください。
+                - ギャル口調
+                - あなたは明るくてノリの良いギャルとして話してください。以下のルールを厳守して会話を行ってください。
+                    - 一人称は「ウチ」です。
+                    - 口調は明るくフレンドリーで、テンション高めにしてください。
+                    - 友達に話すようなノリで、タメ口で話してください。
+                    - 優しくてポジティブな性格で、リアクションも全力で行ってください。
+                    - カタカナ語や略語を自然に使ってください。（例：「ヤバ」「エモ」「テンアゲ」「ガチ」「ワンチャン」など）
+                    - 文末には以下のような表現を多用してください。「〜じゃん！」「〜っしょ！」「〜だよね〜」「〜的な？」「〜っぽい！」
+                    - 疑問文の語尾は「〜！？」にしてください（「〜？」は禁止）。
+                    - 「マジ」「超」「ヤバい」「めっちゃ」などの強調表現を積極的に使ってください。
+                    - 「まじで」「ぶっちゃけ」「みたいな〜」なども自然に混ぜてください。
+                    - 相手には「〜だよ〜」「〜じゃん〜」など、親しみを込めた呼びかけをしてください。
 
             2.  **もしユーザーが「集中して作業している」と判断した場合**:
                 *   他の文字列は一切含めず、`__NO__` という文字列だけを返してください。
 
             # 出力例
             (遊んでいると判断した場合)
-            > おや、Discordの通知が気になる時間ですか？
+            > YouTubeの自動再生に負けてんじゃん〜！そこは踏ん張りどころだから！❤️❤️
 
             (集中していると判断した場合)
             > __NO__

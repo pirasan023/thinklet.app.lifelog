@@ -45,8 +45,8 @@ class SpreadsheetLogUseCase @Inject constructor() {
                 setBody(SpreadsheetLogRequest(timestamp, analysis, imagePath))
             }
 
-            if (response.status.isSuccess()) {
-                Log.i(TAG, "Successfully logged to spreadsheet")
+            if (response.status.isSuccess() || response.status == HttpStatusCode.Found) {
+                Log.i(TAG, "Successfully logged to spreadsheet (status: ${response.status})")
                 Result.success(Unit)
             } else {
                 Log.e(TAG, "Failed to log to spreadsheet: ${response.status}")

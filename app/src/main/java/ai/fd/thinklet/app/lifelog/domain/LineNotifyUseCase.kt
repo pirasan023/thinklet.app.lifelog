@@ -7,6 +7,7 @@ import io.ktor.client.engine.okhttp.*
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
+import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.Serializable
@@ -21,7 +22,7 @@ private data class LinePushRequest(
 
 @Serializable
 private data class MessageObject(
-    val type: String = "text",
+    val type: String,
     val text: String
 )
 
@@ -30,6 +31,7 @@ class LineNotifyUseCase @Inject constructor() {
         install(ContentNegotiation) {
             json(Json {
                 ignoreUnknownKeys = true
+                encodeDefaults = true
             })
         }
         install(HttpTimeout) {
@@ -47,14 +49,15 @@ class LineNotifyUseCase @Inject constructor() {
         }
 
         return try {
+            // トークンの先頭数文字をログに出して、正しく読み込まれているか確認（デバッグ用）
+            Log.d(TAG, "Using token starting with: ${channelAccessToken.take(10)}...")
+            
             val response = client.post("https://api.line.me/v2/bot/message/push") {
-                headers {
-                    append(HttpHeaders.Authorization, "Bearer \$channelAccessToken")
-                    contentType(ContentType.Application.Json)
-                }
+                header(HttpHeaders.Authorization, "Bearer $channelAccessToken")
+                contentType(ContentType.Application.Json)
                 setBody(LinePushRequest(
                     to = userId,
-                    messages = listOf(MessageObject(text = message))
+                    messages = listOf(MessageObject(type = "text", text = message))
                 ))
             }
 
@@ -62,8 +65,9 @@ class LineNotifyUseCase @Inject constructor() {
                 Log.i(TAG, "Successfully sent LINE message.")
                 Result.success(Unit)
             } else {
-                Log.e(TAG, "Failed to send LINE message: \${response.status}")
-                Result.failure(Exception("HTTP error: \${response.status}"))
+                val errorBody = response.bodyAsText()
+                Log.e(TAG, "Failed to send LINE message: ${response.status}. Body: $errorBody")
+                Result.failure(Exception("HTTP error: ${response.status}"))
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to send LINE message.", e)

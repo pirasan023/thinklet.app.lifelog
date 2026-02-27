@@ -77,7 +77,7 @@ class LifeLogService : LifecycleService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
-        
+
         when (intent?.action) {
             ACTION_START -> {
                 val args = LifeLogArgs.get(intent.extras)
@@ -87,16 +87,30 @@ class LifeLogService : LifecycleService() {
                 stopLifeLog()
                 stopSelf()
             }
+            ACTION_ANALYZE_NOW -> {
+                triggerManualAnalysis()
+            }
         }
         return START_STICKY
     }
 
+    private var currentArgs: LifeLogArgs? = null
+
+    private fun triggerManualAnalysis() {
+        val args = currentArgs ?: return
+        lifecycleScope.launch {
+            statusRepository.updateStatus { it.copy(isAnalyzing = true) }
+            runAnalysisCycle(args, forceCheckPlaying = true)
+            statusRepository.updateStatus { it.copy(isAnalyzing = false) }
+        }
+    }
+
     private fun startLifeLog(args: LifeLogArgs) {
         if (statusRepository.status.value.isRunning) return
-
+        currentArgs = args
         Log.i(TAG, "Starting LifeLog Service with args: $args")
         persistSettings(args)
-        
+
         // WakeLock to keep CPU running
         wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager).run {
             newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "LifeLog::CaptureWakeLock").apply {
@@ -110,8 +124,8 @@ class LifeLogService : LifecycleService() {
         val notification = createNotification("LifeLog is active")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
-                NOTIFICATION_ID, 
-                notification, 
+                NOTIFICATION_ID,
+                notification,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
             )
         } else {
@@ -121,101 +135,19 @@ class LifeLogService : LifecycleService() {
         // Snapshot loop
         captureJob = lifecycleScope.launch {
             val intervalMillis = args.intervalSeconds * 1000L
-            
-            while (isActive) {
-                // Trigger snapshot
-                Log.d(TAG, "Triggering snapshot...")
-                val result = snapshotUseCase.takeSingleSnapshot(args.size)
-                
-                val lastSuccessTime = System.currentTimeMillis()
-                val lastPath = result.getOrNull()
-                val error = result.exceptionOrNull()?.message
-                
-                if (lastPath == null) {
-                    Log.e(TAG, "Snapshot failed: $error")
-                } else {
-                    Log.i(TAG, "Snapshot saved to: $lastPath. Starting analysis...")
-                    
-                    val currentPath = lastPath
-                    val currentTime = lastSuccessTime
-                    
-                    lifecycleScope.launch {
-                        val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(currentTime))
-                        
-                        // Macのスクリーンショット取得を試みる（失敗してもnullで続行）
-                        val macScreenshot = try {
-                            macScreenshotUseCase()
-                        } catch (e: Exception) {
-                            Log.d(TAG, "Mac screenshot fetch failed, continuing without it", e)
-                            null
-                        }
-                        
-                        if (macScreenshot != null) {
-                            Log.i(TAG, "Mac screenshot acquired, sending 2 images to Gemini")
-                            
-                            // Macスクリーンショットをローカルに保存（adb pullで一式エクスポート可能）
-                            try {
-                                val macFile = File(
-                                    File(currentPath).parentFile,
-                                    "${File(currentPath).nameWithoutExtension}_mac.png"
-                                )
-                                FileOutputStream(macFile).use { fos ->
-                                    macScreenshot.compress(Bitmap.CompressFormat.PNG, 100, fos)
-                                }
-                                fileSelectorRepository.deploy(macFile)
-                                Log.i(TAG, "Mac screenshot saved to: ${macFile.absolutePath}")
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Failed to save Mac screenshot locally", e)
-                            }
-                        } else {
-                            Log.i(TAG, "No Mac screenshot, sending 1 image to Gemini")
-                        }
-                        
-                        geminiAnalysisUseCase(currentPath, timestamp, macScreenshot).onSuccess { text ->
-                            Log.i(TAG, "Analysis success: $text")
-                            
-                            // Save locally as .txt
-                            try {
-                                val txtFile = fileSelectorRepository.txtPath(File(currentPath))
-                                txtFile.writeText(text)
-                                fileSelectorRepository.deploy(txtFile)
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Failed to save analysis text locally", e)
-                            }
-                            
-                            // Log to Spreadsheet
-                            spreadsheetLogUseCase(timestamp, text, currentPath).onFailure {
-                                Log.e(TAG, "Spreadsheet logging failed inside service", it)
-                            }.onSuccess {
-                                Log.i(TAG, "Spreadsheet logging success")
-                            }
 
-                            // 10回に1回、遊びをチェックする
-                            analysisCounter++
-                            if (analysisCounter % 10 == 0) {
-                                Log.i(TAG, "Performing periodic check if user is playing...")
-                                lifecycleScope.launch {
-                                    checkIfPlayingUseCase()
-                                }
-                            }
-                        }.onFailure {
-                            Log.e(TAG, "Analysis failed", it)
-                        }
-                    }
-                }
-                
+            while (isActive) {
                 val nextTime = SystemClock.elapsedRealtime() + intervalMillis
-                
+
+                runAnalysisCycle(args)
+
                 // Countdown loop (every second)
                 while (SystemClock.elapsedRealtime() < nextTime && isActive) {
                     val remaining = ((nextTime - SystemClock.elapsedRealtime()) / 1000).toInt()
-                    statusRepository.updateStatus { 
+                    statusRepository.updateStatus {
                         it.copy(
-                            lastCaptureTime = if (lastPath != null) lastSuccessTime else it.lastCaptureTime,
-                            lastCapturePath = lastPath ?: it.lastCapturePath,
                             nextCaptureTime = System.currentTimeMillis() + (nextTime - SystemClock.elapsedRealtime()),
-                            remainingSeconds = remaining,
-                            error = error
+                            remainingSeconds = remaining
                         )
                     }
                     delay(1000)
@@ -228,6 +160,81 @@ class LifeLogService : LifecycleService() {
             recordJob = lifecycleScope.launch {
                 micRecordUseCase()
             }
+        }
+    }
+
+    private suspend fun runAnalysisCycle(args: LifeLogArgs, forceCheckPlaying: Boolean = false) {
+        Log.d(TAG, "Triggering analysis cycle...")
+        val result = snapshotUseCase.takeSingleSnapshot(args.size)
+
+        val lastSuccessTime = System.currentTimeMillis()
+        val lastPath = result.getOrNull()
+        val error = result.exceptionOrNull()?.message
+
+        if (lastPath == null) {
+            Log.e(TAG, "Snapshot failed: $error")
+            statusRepository.updateStatus { it.copy(error = error) }
+            return
+        }
+
+        Log.i(TAG, "Snapshot saved to: $lastPath. Starting analysis...")
+        val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(lastSuccessTime))
+
+        // Macのスクリーンショット取得
+        val macScreenshot = try {
+            macScreenshotUseCase()
+        } catch (e: Exception) {
+            Log.d(TAG, "Mac screenshot fetch failed", e)
+            null
+        }
+
+        if (macScreenshot != null) {
+            try {
+                val macFile = File(File(lastPath).parentFile, "${File(lastPath).nameWithoutExtension}_mac.png")
+                FileOutputStream(macFile).use { fos -> macScreenshot.compress(Bitmap.CompressFormat.PNG, 100, fos) }
+                fileSelectorRepository.deploy(macFile)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to save Mac screenshot", e)
+            }
+        }
+
+        geminiAnalysisUseCase(lastPath, timestamp, macScreenshot).onSuccess { text ->
+            Log.i(TAG, "Analysis success: $text")
+
+            // Save locally
+            try {
+                val txtFile = fileSelectorRepository.txtPath(File(lastPath))
+                txtFile.writeText(text)
+                fileSelectorRepository.deploy(txtFile)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to save analysis text", e)
+            }
+
+            // Log to Spreadsheet
+            spreadsheetLogUseCase(timestamp, text, lastPath)
+
+            // 遊びをチェックする (定期実行または強制実行時)
+            analysisCounter++
+            if (forceCheckPlaying || analysisCounter % args.analysisInterval == 0) {
+                Log.i(TAG, "Checking if user is playing (interval: ${args.analysisInterval})...")
+                val playingResult = checkIfPlayingUseCase(text, args.analysisInterval)
+                statusRepository.updateStatus {
+                    it.copy(
+                        lastAnalysisResult = playingResult.getOrNull()
+                    )
+                }
+            }
+
+            statusRepository.updateStatus {
+                it.copy(
+                    lastCaptureTime = lastSuccessTime,
+                    lastCapturePath = lastPath,
+                    error = null
+                )
+            }
+        }.onFailure { throwable ->
+            Log.e(TAG, "Analysis failed", throwable)
+            statusRepository.updateStatus { it.copy(error = throwable.message) }
         }
     }
 
@@ -253,6 +260,7 @@ class LifeLogService : LifecycleService() {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit()
             .putInt("intervalSeconds", args.intervalSeconds)
+            .putInt("analysisInterval", args.analysisInterval)
             .putBoolean("enabledMic", args.enabledMic)
             .apply()
     }
@@ -273,13 +281,13 @@ class LifeLogService : LifecycleService() {
             action = ACTION_STOP
         }
         val stopPendingIntent = PendingIntent.getService(
-            this, 0, stopIntent, 
+            this, 0, stopIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         val mainIntent = Intent(this, MainActivity::class.java)
         val mainPendingIntent = PendingIntent.getActivity(
-            this, 0, mainIntent, 
+            this, 0, mainIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
@@ -302,10 +310,11 @@ class LifeLogService : LifecycleService() {
         private const val TAG = "LifeLogService"
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "lifelog_service"
-        
+
         const val ACTION_START = "ai.fd.thinklet.app.lifelog.ACTION_START"
         const val ACTION_STOP = "ai.fd.thinklet.app.lifelog.ACTION_STOP"
-        
+        const val ACTION_ANALYZE_NOW = "ai.fd.thinklet.app.lifelog.ACTION_ANALYZE_NOW"
+
         const val PREFS_NAME = "lifelog_prefs"
         const val PREF_IS_ENABLED = "is_enabled"
 
@@ -316,6 +325,7 @@ class LifeLogService : LifecycleService() {
                 putExtra("longSide", args.longSide.toString())
                 putExtra("shortSide", args.shortSide.toString())
                 putExtra("intervalSeconds", args.intervalSeconds.toString())
+                putExtra("analysisInterval", args.analysisInterval.toString())
                 putExtra("enabledMic", args.enabledMic.toString())
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -328,6 +338,13 @@ class LifeLogService : LifecycleService() {
         fun stop(context: Context) {
             val intent = Intent(context, LifeLogService::class.java).apply {
                 action = ACTION_STOP
+            }
+            context.startService(intent)
+        }
+
+        fun analyzeNow(context: Context) {
+            val intent = Intent(context, LifeLogService::class.java).apply {
+                action = ACTION_ANALYZE_NOW
             }
             context.startService(intent)
         }

@@ -15,5 +15,7 @@ class LifeLogViewModel @Inject constructor(
 
     val status: StateFlow<LifeLogStatus> = repository.status
 
-    // Optionally handle any UI logic here
+    fun triggerManualAnalysis(context: android.content.Context) {
+        LifeLogService.analyzeNow(context)
+    }
 }

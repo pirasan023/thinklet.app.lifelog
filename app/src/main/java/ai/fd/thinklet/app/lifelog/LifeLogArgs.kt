@@ -8,6 +8,7 @@ data class LifeLogArgs(
     val longSide: Int,
     val shortSide: Int,
     val intervalSeconds: Int,
+    val analysisInterval: Int,
     val enabledMic: Boolean
 ) {
     val size: Size
@@ -19,6 +20,7 @@ data class LifeLogArgs(
             longSide = bundle?.get("longSide")?.toString()?.toIntOrNull() ?: 1280,
             shortSide = bundle?.get("shortSide")?.toString()?.toIntOrNull() ?: 720,
             intervalSeconds = max(bundle?.get("intervalSeconds")?.toString()?.toIntOrNull() ?: 300, 10), // 最小で10秒
+            analysisInterval = bundle?.get("analysisInterval")?.toString()?.toIntOrNull() ?: 10,
             enabledMic = bundle?.get("enabledMic")?.toString()?.toBooleanStrictOrNull() == true,
         )
     }

@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
@@ -32,10 +33,13 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -101,6 +105,7 @@ fun LifeLogDashboard(vm: LifeLogViewModel = viewModel()) {
     val prefs = remember { context.getSharedPreferences(LifeLogService.PREFS_NAME, Context.MODE_PRIVATE) }
     var micEnabled by remember { mutableStateOf(prefs.getBoolean("enabledMic", false)) }
     var intervalSeconds by remember { mutableFloatStateOf(prefs.getInt("intervalSeconds", 60).toFloat()) }
+    var analysisInterval by remember { mutableFloatStateOf(prefs.getInt("analysisInterval", 10).toFloat()) }
     
     val permissions = mutableListOf(
         Manifest.permission.CAMERA,
@@ -148,7 +153,7 @@ fun LifeLogDashboard(vm: LifeLogViewModel = viewModel()) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        StatusCard(status)
+        StatusCard(status, vm)
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -205,6 +210,25 @@ fun LifeLogDashboard(vm: LifeLogViewModel = viewModel()) {
                         enabled = !status.isRunning
                     )
                 }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(thickness = 0.5.dp)
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Analysis Interval Setting
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.History, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = "Analysis Frequency: Every ${analysisInterval.roundToInt()} snapshots")
+                    }
+                    Slider(
+                        value = analysisInterval,
+                        onValueChange = { analysisInterval = it },
+                        valueRange = 1f..50f,
+                        enabled = !status.isRunning
+                    )
+                }
             }
         }
 
@@ -215,7 +239,8 @@ fun LifeLogDashboard(vm: LifeLogViewModel = viewModel()) {
                 onClick = {
                     val args = LifeLogArgs.get(null).copy(
                         enabledMic = micEnabled,
-                        intervalSeconds = intervalSeconds.roundToInt()
+                        intervalSeconds = intervalSeconds.roundToInt(),
+                        analysisInterval = analysisInterval.roundToInt()
                     )
                     LifeLogService.start(context, args)
                 },
@@ -246,7 +271,8 @@ fun LifeLogDashboard(vm: LifeLogViewModel = viewModel()) {
 }
 
 @Composable
-fun StatusCard(status: ai.fd.thinklet.app.lifelog.data.LifeLogStatus) {
+fun StatusCard(status: ai.fd.thinklet.app.lifelog.data.LifeLogStatus, vm: LifeLogViewModel = viewModel()) {
+    val context = LocalContext.current
     val timeFormat = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
 
     Card(
@@ -288,14 +314,61 @@ fun StatusCard(status: ai.fd.thinklet.app.lifelog.data.LifeLogStatus) {
 
             if (status.isRunning) {
                 Spacer(modifier = Modifier.height(16.dp))
-                
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.History, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Last Capture: ${status.lastCaptureTime?.let { timeFormat.format(Date(it)) } ?: "Waiting..."}",
-                        style = MaterialTheme.typography.bodyLarge
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.History, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Last Capture: ${status.lastCaptureTime?.let { timeFormat.format(Date(it)) } ?: "Waiting..."}",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+
+                    // Manual Analysis Button
+                    AssistChip(
+                        onClick = { vm.triggerManualAnalysis(context) },
+                        label = { Text("Analyze Now") },
+                        leadingIcon = {
+                            if (status.isAnalyzing) {
+                                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(14.dp))
+                            }
+                        },
+                        enabled = !status.isAnalyzing,
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer
+                        )
                     )
+                }
+
+                status.lastAnalysisResult?.let { result ->
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = "Latest Analysis:",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = if (result == "__NO__") "Concentrating (Working)" else result,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = if (result != "__NO__") FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
                 }
                 
                 Spacer(modifier = Modifier.height(12.dp))

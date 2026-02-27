@@ -13,6 +13,8 @@ data class LifeLogStatus(
     val lastCapturePath: String? = null,
     val nextCaptureTime: Long? = null,
     val remainingSeconds: Int = 0,
+    val lastAnalysisResult: String? = null,
+    val isAnalyzing: Boolean = false,
     val error: String? = null
 )
 
