@@ -16,7 +16,7 @@ class CheckIfPlayingUseCase @Inject constructor(
     // Geminiモデルを初期化
     private val model by lazy {
         GenerativeModel(
-            modelName = "gemini-2.5-flash",
+            modelName = "gemma-3-27b-it",
             apiKey = BuildConfig.GEMINI_API_KEY
         )
     }

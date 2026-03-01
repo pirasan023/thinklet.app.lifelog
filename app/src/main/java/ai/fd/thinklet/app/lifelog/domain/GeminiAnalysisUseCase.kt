@@ -14,7 +14,7 @@ import javax.inject.Inject
 class GeminiAnalysisUseCase @Inject constructor() {
     private val model by lazy {
         GenerativeModel(
-            modelName = "gemini-2.5-flash",
+            modelName = "gemma-3-27b-it",
             apiKey = BuildConfig.GEMINI_API_KEY
         )
     }
